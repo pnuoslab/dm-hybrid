@@ -106,6 +106,7 @@ static void dmz_reclaim_kcopy_end(int read_err, unsigned long write_err,
 	struct dmz_reclaim *zrc = context;
 
 	if (read_err || write_err) {
+		trace_printk("[DEBUGRECL] dmz_reclaim_kcopy_end read_err %d, write_err %u\n", read_err, write_err);
 		zrc->kc_err = -EIO;
 	}
 	else {
@@ -214,8 +215,10 @@ static int dmz_reclaim_copy(struct dmz_reclaim *zrc,
 			       dmz_reclaim_kcopy_end, zrc);
 
 		/* Wait for copy to complete */
+		//trace_printk("[DEBUGRECL] dmz_reclaim_copy wait_on_bit_io start\n");
 		wait_on_bit_io(&zrc->flags, DMZ_RECLAIM_KCOPY,
 			       TASK_UNINTERRUPTIBLE);
+		//trace_printk("[DEBUGRECL] dmz_reclaim_copy wait_on_bit_io end\n");
 		if (zrc->kc_err) {
 			return zrc->kc_err;
 		}
@@ -245,6 +248,9 @@ static int dmz_reclaim_copy_rnd(struct dmz_reclaim *zrc,
 	ktime_t start, end;
     s64 actual_time;
 	
+	if (c == NULL) {
+		trace_printk("\t\t\t[DEBUGRECL] dmz_reclaim_copy_rnd c == NULL error\n"); 
+	}
 
 	if (dmz_is_seq(src_zone))
 		end_block = src_zone->wp_block;
@@ -271,6 +277,7 @@ static int dmz_reclaim_copy_rnd(struct dmz_reclaim *zrc,
 //		if (dmz_reclaim_should_terminate(src_zone) {
 		
 		if (dmz_chunk_reclaim_should_terminate(c)) {
+			trace_printk("[WRITELEN] reclaim_copy_rnd fail\n");
 			return -EINTR;
 		}
 		
@@ -289,6 +296,9 @@ static int dmz_reclaim_copy_rnd(struct dmz_reclaim *zrc,
 			break;
 		}
 		if (DMZ_BLOCK_PER_ZONE <= i) {
+			if (is_rnd == 1) { trace_printk("[EVAL] rnd_reclaim %llu count %d\n", recl_block_log, recl_count); }
+			else if (is_rnd == 0) { trace_printk("[EVAL] seq_reclaim %llu count %d\n", recl_block_log, recl_count); }
+			else { trace_printk("[EVAL] else_reclaim %llu count %d\n", recl_block_log, recl_count); }
 			return 0;
 		}
 		block = cur_rz_offset;
@@ -305,14 +315,21 @@ static int dmz_reclaim_copy_rnd(struct dmz_reclaim *zrc,
 		}
 		end = ktime_get();
 		actual_time = ktime_to_ns(ktime_sub(end, start));
+//		trace_printk("[EVAL] block %d time %lld\n", ret, (long long)actual_time);
 		/*modi*/
 
 		if (ret <= 0) {
+			if (ret == 0) {
+				if (is_rnd == 1) { trace_printk("[EVAL] rnd_reclaim %llu count %d\n", recl_block_log, recl_count); }
+				else if (is_rnd == 0) { trace_printk("[EVAL] seq_reclaim %llu count %d\n", recl_block_log, recl_count); }
+				else { trace_printk("[EVAL] else_reclaim %llu count %d\n", recl_block_log, recl_count); }
+			}
 			return ret;
 		}
 		nr_blocks = ret;
 		/*modi*/
 		recl_block_log += nr_blocks;
+		trace_printk("[SEQTEST] chunk %u chunk_block %u nr_blocks %u\n", c->id, chunk_block, nr_blocks);
 
 		/*
 		 * If we are writing in a sequential zone, we must make sure
@@ -355,6 +372,10 @@ static int dmz_reclaim_copy_rnd(struct dmz_reclaim *zrc,
 	}
 
 	/*modi*/
+	if (is_rnd == 1) { trace_printk("[EVAL] rnd_reclaim %llu count %d\n", recl_block_log, recl_count); }
+    else if (is_rnd == 0) { trace_printk("[EVAL] seq_reclaim %llu count %d\n", recl_block_log, recl_count); }
+	else { trace_printk("[EVAL] else_reclaim %llu count %d\n", recl_block_log, recl_count); }
+
 	return 0;
 }
 
@@ -401,6 +422,11 @@ static int dmz_reclaim_copy_buf(struct dmz_reclaim *zrc,
 		/*modi*/
 		int cur_rz_offset;
 		if (ret <= 0) {
+			if (ret == 0) {
+				if (is_rnd == 1) { trace_printk("[EVAL] rnd_reclaim %llu\n", recl_block_log); }
+	            else if (is_rnd == 0) { trace_printk("[EVAL] seq_reclaim %llu\n", recl_block_log); }
+	            else { trace_printk("[EVAL] else_reclaim %llu\n", recl_block_log); }
+			}
 			return ret;
 		}
 		nr_blocks = ret;
@@ -445,6 +471,9 @@ static int dmz_reclaim_copy_buf(struct dmz_reclaim *zrc,
 	}
 
 	/*modi*/
+	if (is_rnd == 1) { trace_printk("rnd_reclaim %llu\n", recl_block_log); }
+    else if (is_rnd == 0) { trace_printk("seq_reclaim %llu\n", recl_block_log); }
+	else { trace_printk("else_reclaim %llu\n", recl_block_log); }
 
 	return 0;
 }
@@ -466,6 +495,9 @@ static int dmz_reclaim_copy_seq(struct dmz_reclaim *zrc,
 	ktime_t start, end;
     s64 actual_time;
 
+	if (c == NULL) {
+		trace_printk("\t\t\t[DEBUGRECL] dmz_reclaim_copy_seq c == NULL error\n");
+	}
 
 	if (dmz_is_seq(src_zone))
 		end_block = src_zone->wp_block;
@@ -494,6 +526,7 @@ static int dmz_reclaim_copy_seq(struct dmz_reclaim *zrc,
 //		if (dmz_reclaim_should_terminate(src_zone)) {
 		
 		if (dmz_chunk_reclaim_should_terminate(c)) {
+			trace_printk("[WRITELEN] reclaim_copy_seq fail\n");
 			return -EINTR;
 		}
 		
@@ -520,6 +553,8 @@ static int dmz_reclaim_copy_seq(struct dmz_reclaim *zrc,
 		cur_rz_offset = c->offsets[i];
 		rnd_first_block = i;
 		if (DMZ_BLOCK_PER_ZONE <= i && seq_cont_num <= 0) {
+			trace_printk("[EVAL] rnd_reclaim %llu count %d\n", rnd_recl_block_log, rnd_recl_count);
+			trace_printk("[EVAL] seq_reclaim %llu count %d\n", seq_recl_block_log, seq_recl_count);
 			return 0;
 		}
 		if (rnd_first_block < seq_first_block) {
@@ -546,14 +581,20 @@ static int dmz_reclaim_copy_seq(struct dmz_reclaim *zrc,
 		}
 		end = ktime_get();
 		actual_time = ktime_to_ns(ktime_sub(end, start));
+//		trace_printk("[EVAL] block %d time %lld\n", ret, (long long)actual_time);
 
 //		dmz_release_mblock(zmd, seq_mblk);
 		/*modi*/
 
 		if (ret <= 0) {
+			if (ret == 0) {
+				trace_printk("[EVAL] rnd_reclaim %llu count %d\n", rnd_recl_block_log, rnd_recl_count);
+				trace_printk("[EVAL] seq_reclaim %llu count %d\n", seq_recl_block_log, seq_recl_count);
+			}
 			return ret;
 		}
 		nr_blocks = ret;
+		trace_printk("[SEQTEST] chunk_block %u nr_blocks %u\n", chunk_block, nr_blocks);
 		/*modi*/
 		if (is_rnd) {
 			rnd_recl_block_log += nr_blocks;
@@ -615,6 +656,8 @@ static int dmz_reclaim_copy_seq(struct dmz_reclaim *zrc,
 	}
 
 	/*modi*/
+	trace_printk("[EVAL] rnd_reclaim %llu count %d\n", rnd_recl_block_log, rnd_recl_count);
+	trace_printk("[EVAL] seq_reclaim %llu count %d\n", seq_recl_block_log, seq_recl_count);
 
 	return 0;
 }
@@ -670,6 +713,9 @@ static int dmz_reclaim_buf(struct dmz_reclaim *zrc, struct dm_zone *dzone)
 /*modi*/
 static int dmz_reclaim_buf_data(struct dmz_reclaim *zrc, struct dm_zone *dzone, struct dm_chunk *c, int is_zone)
 {	
+	if (c == NULL) {
+		trace_printk("\t\t[DEBUGRECL] dmz_reclaim_buf_data c == NULL error\n");
+	}
 	struct dm_zone *bzone = c->szone; // sequential zone
 	sector_t chunk_block = dzone->wp_block;
 	struct dmz_metadata *zmd = zrc->metadata;
@@ -697,6 +743,7 @@ static int dmz_reclaim_buf_data(struct dmz_reclaim *zrc, struct dm_zone *dzone, 
 			if (rc->id == c->id) break;
 		}
 		if (rc->id != c->id)
+			trace_printk("[SNAP] rc->id != c->id err\n");
 		ret = dmz_merge_valid_blocks_for_zone_reclaim(zmd, dzone, c, bzone, chunk_block, rc);
 	}
 	else {
@@ -756,6 +803,9 @@ static int dmz_reclaim_buf_data(struct dmz_reclaim *zrc, struct dm_zone *dzone, 
  */
 static int dmz_reclaim_seq_data(struct dmz_reclaim *zrc, struct dm_zone *dzone, /*modi*/ struct dm_chunk *c, int is_zone)
 {
+	if (c == NULL) {
+		trace_printk("[DEBUG] dmz_reclaim_seq_data c == NULL error\n");
+	}
 	unsigned int chunk = c->id;
 	struct dm_zone *szone = NULL;
 	struct dm_zone *bzone = c->szone; // sequential zone
@@ -798,6 +848,8 @@ again:
 		list_for_each_entry(rc, &dzone->chunks, link) {
 			if (rc->id == c->id) { break; }
 		}
+		if (rc->id != c->id)
+			trace_printk("[SNAP] rc->id != c->id error\n");
 		ret = dmz_merge_valid_blocks_seq_for_zone_reclaim(zmd, dzone, bzone, c, szone, 0, rc);
 	}
 	else {
@@ -875,6 +927,9 @@ again:
  */
 static int dmz_reclaim_rnd_data(struct dmz_reclaim *zrc, struct dm_zone *dzone, /*modi*/ struct dm_chunk *c, int is_zone)
 {
+	if (c == NULL) {
+		trace_printk("\t\t[DEBUGRECL] dmz_reclaim_rnd_data c == NULL error\n");
+	}
 	unsigned int chunk = c->id;
 	struct dm_zone *szone = NULL;
 	struct dmz_metadata *zmd = zrc->metadata;
@@ -905,24 +960,46 @@ again:
 		dmz_is_rnd(szone) ? "rnd" : "seq", szone->id);
 
 	/* Flush the random data zone into the sequential zone */
+	trace_printk("[SEQTEST] dmz_reclaim_copy_rnd start szone %u chunk %u weight %u\n", szone->id, c->id, c->weight);
 	start = ktime_get();
 	ret = dmz_reclaim_copy_rnd(zrc, dzone, szone, c); // dmz_reclaim_copy_rnd
 	end = ktime_get();
 	actual_time = ktime_to_ns(ktime_sub(end, start));
+	trace_printk("[SEQTEST] dmz_reclaim_copy_rnd end szone %u chunk %u weight %u time %lld ret %d\n", 
+					szone->id, c->id, c->weight, (long long)actual_time, ret);
 
 
 	dmz_lock_flush(zmd);
 
 	if (ret == 0) {
+		/* Validate copied blocks */
+			/*
+		if (is_zone) {
+			trace_printk("[TEST] dmz_copy_valid_blocks_for_zone_reclaim start\n");
+			ret = dmz_copy_valid_blocks_for_zone_reclaim(zmd, dzone, szone, c);
+			trace_printk("[TEST] dmz_copy_valid_blocks_for_zone_reclaim end\n");
+		}
+		else {
+			trace_printk("[TEST] dmz_copy_valid_blocks start\n");
+			*/
+			
+		trace_printk("[TEST] dmz_copy_valid_blocks start\n");
 		if (is_zone) {
 			list_for_each_entry(rc, &dzone->chunks, link) {
 				if (rc->id == c->id) break;
 			}
+			if (rc->id != c->id)
+				trace_printk("[SNAP] rc->id != c->id err\n");
 			ret = dmz_copy_valid_blocks_for_zone_reclaim(zmd, dzone, szone, c, rc);
 		}
 		else {
 			ret = dmz_copy_valid_blocks(zmd, dzone, szone, c);
 		}
+		trace_printk("[TEST] dmz_copy_valid_blocks end ret %d\n", ret);
+			/*
+			trace_printk("[TEST] dmz_copy_valid_blocks end\n");
+		}
+		*/
 	}
 	if (ret) {
 		/* Free the sequential zone */
@@ -937,27 +1014,61 @@ again:
 		if (is_zone) {
 			dmz_lock_map(zmd);
 			dmz_unmap_zone(zmd, dzone, chunk, szone->id);
+			//dzone->nr_mapped_chunk -= c->rz_weight;
+			//trace_printk("[TEST] dmz_update_mapped_chunk start\n");
+			//dmz_update_mapped_chunk(dzone, c->id);
+			//trace_printk("[TEST] dmz_update_mapped_chunk end\n");
+			//trace_printk("[TEST] dmz_map_zone start\n");
 			dmz_set_chunk_mapping(zmd, rc->id, szone->id, dzone->id);
 			rc->szone = szone;
 			szone->bzone = dzone;
+//			dmz_map_zone(zmd, szone, chunk, 0);
+			trace_printk("[TEST] dmz_map_zone end\n");
+			trace_printk("[TEST] dmz_unlock_chunk_for_zone_reclaim start\n");
 			dmz_unlock_chunk_for_zone_reclaim(rc);
 			atomic_dec(&rc->zone_recl);
+			trace_printk("[TEST] dmz_unlock_chunk_for_zone_reclaim end\n");
 			kfree(c);
+			trace_printk("[TEST] dmz_unlock_map start\n");
 			dmz_unlock_map(zmd);
+			trace_printk("[TEST] dmz_unlock_map end\n");
 		}
 		else {
 		
 			dmz_lock_map(zmd);
+			trace_printk("[TEST] dmz_unmap_zone start\n");
 			dmz_unmap_zone(zmd, dzone, chunk, szone->id);
+			trace_printk("[TEST] dmz_unmap_zone end\n");
+			//dmz_unlock_zone_reclaim(dzone);
+			/* chunk list modi */
+			trace_printk("[TEST] dmz_unlock_chunk_reclaim start\n");
 			dmz_unlock_chunk_reclaim(c);
+			trace_printk("[TEST] dmz_unlock_chunk_reclaim end\n");
+			/* chunk list modi */
+			/* rz chunk weight modi */
+			trace_printk("[TEST] dzone nr_mapped_chunk change start\n");
 			dzone->nr_mapped_chunk -= c->rz_weight;
+			trace_printk("[TEST] dzone nr_mapped_chunk change end\n");
+			/* rz chunk weight modi */
 			if (dzone->nr_mapped_chunk < DMZ_CHUNK_PER_RZ) {
+				trace_printk("[TEST] dmz_free_zone start\n");
 				dmz_free_zone(zmd, dzone);
+				trace_printk("[TEST] dmz_free_zone end\n");
 			}
+			trace_printk("[TEST] dmz_map_zone start\n");
 			dmz_map_zone(zmd, szone, chunk, 0);
+			trace_printk("[TEST] dmz_map_zone end\n");
+			trace_printk("[TEST] list_del1 start\n");
 			list_del(&c->link);
+			trace_printk("[TEST] list_del1 end\n");
+			/* chunk list modi */
+			trace_printk("[TEST] list_del2 start\n");
 			list_del(&c->map_link);
+			trace_printk("[TEST] list_del2 end\n");
+			/* chunk list modi */
+			trace_printk("[TEST] kfree start\n");
 			kfree(c);
+			trace_printk("[TEST] kfree end\n");
 			dmz_unlock_map(zmd);
 		}
 	}
@@ -1007,11 +1118,13 @@ static int dmz_do_reclaim_all_chunk(struct dmz_reclaim *zrc)
 	dzone = dmz_get_zone_for_reclaim(zmd, zrc->dev_idx,
 					 dmz_target_idle(zrc));
 	if (!dzone) { 
+		trace_printk("[DEBUGRAC] dmz_get_zone_for_reclaim dzone == NULL error\n"); 
 		return 0;
 	}
 	if (!dzone) {
 		DMDEBUG("(%s/%u): No zone found to reclaim",
 			dmz_metadata_label(zmd), zrc->dev_idx);
+//		trace_printk("\t[DEBUG] dmz_do_reclaim !dzone\n");
 		return -EBUSY;
 	}
 	rzone = dzone;
@@ -1020,6 +1133,7 @@ static int dmz_do_reclaim_all_chunk(struct dmz_reclaim *zrc)
 	/*modi*/
 	struct dm_chunk *max_w_c = NULL;
 	list_for_each_entry(max_w_c, &dzone->chunks, link) {
+		if (max_w_c == NULL) { trace_printk("\t[DEBUGRAC] max_w_c is NULL error\n"); return 0; }
 		if (!max_w_c->szone) {
 			ret = dmz_reclaim_rnd_data(zrc, dzone, max_w_c, 0);
 			if (ret) { break; }
@@ -1027,6 +1141,7 @@ static int dmz_do_reclaim_all_chunk(struct dmz_reclaim *zrc)
 		else {
 			int min_offset = DMZ_BLOCK_PER_ZONE + 1;
 			int i = 0;
+			if (max_w_c == NULL) { trace_printk("\t[DEBUGRAC] max_w_c is NULL error2\n"); return 0; }
 			while (i < DMZ_BLOCK_PER_ZONE) {
 				if (max_w_c->offsets[i] == -1) { i++; continue; }
 				min_offset = i;
@@ -1087,6 +1202,7 @@ static int dmz_do_reclaim(struct dmz_reclaim *zrc)
 	if (!dzone) {
 		DMDEBUG("(%s/%u): No zone found to reclaim",
 			dmz_metadata_label(zmd), zrc->dev_idx);
+//		trace_printk("\t[DEBUG] dmz_do_reclaim !dzone\n");
 		return -EBUSY;
 	}
 	rzone = dzone;
@@ -1095,17 +1211,20 @@ static int dmz_do_reclaim(struct dmz_reclaim *zrc)
 	/*modi*/
 	struct dm_chunk *c, *max_w_c = NULL;
 	struct list_head *chunk_list = &(dzone->chunks);
+	if (chunk_list == NULL) { trace_printk("[DEBUGRECL] chunk_list null error\n"); }
 	list_for_each_entry(c, &(dzone->chunks), link) {
 		if (!max_w_c || max_w_c->weight < c->weight) {
 			max_w_c = c;
 		}
 	}
+	if (max_w_c == NULL) { trace_printk("\t[DEBUGRECL] max_w_c is NULL error\n"); }
 	if (!max_w_c->szone) {
 		ret = dmz_reclaim_rnd_data(zrc, dzone, max_w_c, 0);
 	}
 	else {
 		int min_offset = DMZ_BLOCK_PER_ZONE + 1;
 		int i = 0;
+		if (max_w_c == NULL) { trace_printk("\t[DEBUGRECL] max_w_c is NULL error2\n"); }
 		while (i < DMZ_BLOCK_PER_ZONE) {
 			if (max_w_c->offsets[i] == -1) { i++; continue; }
 			min_offset = i;
@@ -1164,12 +1283,14 @@ static int dmz_do_reclaim_chunk(struct dmz_reclaim *zrc)
 	chunk = dmz_get_chunk_for_reclaim(zmd, zrc->dev_idx,
 					dmz_target_idle(zrc));
 	if (!chunk) {
+		trace_printk("[WRITELEN] do_reclaim fail chunk == NULL\n");
 		return -EBUSY;
 	}
 	dzone = chunk->rzone;
 	if (!dzone) {
 		DMDEBUG("(%s/%u): No zone found to reclaim",
 			dmz_metadata_label(zmd), zrc->dev_idx);
+//		trace_printk("\t[DEBUG] dmz_do_reclaim !dzone\n");
 		return -EBUSY;
 	}
 	/* chunk list modi */
@@ -1227,6 +1348,7 @@ out:
 		dmz_metadata_label(zmd), zrc->dev_idx,
 		rzone->id, jiffies_to_msecs(jiffies - start));
 
+	trace_printk("[RZW] reclaim chunk %u zone %u\n", chunk_id, dzone->id);
 	return 0;
 }
 /* chunk list modi */
@@ -1367,6 +1489,7 @@ out:
     DMDEBUG("(%s/%u): Reclaimed zone %u in %u ms",
         dmz_metadata_label(zmd), zrc->dev_idx,
         zone->id, jiffies_to_msecs(jiffies - start));
+	trace_printk("[RZW] zone_reclaim chunk %u zone %u\n", chunk_id, zone->id);
     return 0;
 }
 /* zone reclaim modi */
@@ -1377,6 +1500,7 @@ out:
 static void dmz_reclaim_work(struct work_struct *work)
 {
 	struct dmz_reclaim *zrc = container_of(work, struct dmz_reclaim, work.work);
+	trace_printk("[SNAP2] dmz_reclaim_work start is_zone_reclaim %d\n", zrc->is_zone_reclaim);
 	/*modi*/
 	atomic_inc(&zrc->active_reclaim);
 	/*modi*/
@@ -1397,7 +1521,9 @@ static void dmz_reclaim_work(struct work_struct *work)
 
 	/* zone reclaim modi */
 
+	trace_printk("[SNAP2] dmz_reclaim_work start is_zone_reclaim %d\n", zrc->is_zone_reclaim);
 	if (zrc->is_zone_reclaim) {
+		trace_printk("[WRITELEN] zone_reclaim start\n");
 		struct dm_zone *zone = zrc->recl_zone;
 		struct dm_chunk *c = zrc->recl_chunk;
 		struct dm_chunk *rc = zrc->recl_chunk;
@@ -1406,15 +1532,22 @@ static void dmz_reclaim_work(struct work_struct *work)
 		/* time debug */
 //		bool get_reclaim_zone = dmz_get_high_weight_zone_for_reclaim(zmd, zrc->dev_idx, 
 //						dmz_target_idle(zrc), zone, &c);
+		trace_printk("[SNAP2] dmz_get_high_weight_c start zone %u c %u\n", zone->id, c->id);
 		
 		test_and_set_bit(DMZ_CHUNK_ZONE_RECLAIM, &rc->flags);
 		bool get_recl_chunk = dmz_get_high_weight_c(zmd, zrc->dev_idx,
 						dmz_target_idle(zrc), zone, &c);
 		
 		
+		trace_printk("[SNAP2] dmz_get_high_weight_c end zone %u c %u\n", zone->id, c->id);
+	//	bool get_recl_chunk = 1;
+		trace_printk("[TEST] dmz_get_high_weight_c %d end\n", get_recl_chunk);
+//		if (get_reclaim_zone) {
+//		trace_printk("[ZONERECL] zone %u get_recl_chunk %d\n", zone->id, get_recl_chunk);
 		if (get_recl_chunk) {
 			
 			if (zone == NULL) { 
+				trace_printk("[WRITELEN] zone_reclaim fail zone == NULL\n");
 				atomic_dec(&zrc->active_reclaim);
 				atomic_dec(&rc->zone_recl);
 				return; 
@@ -1422,12 +1555,16 @@ static void dmz_reclaim_work(struct work_struct *work)
 			
 //			list_for_each_entry(c, &zone->chunks, link) {
 			if (c == NULL) { 
+				trace_printk("[WRITELEN] zone_reclaim fail chunk == NULL\n");
 				atomic_dec(&zrc->active_reclaim);
 				atomic_dec(&rc->zone_recl);
 				return; 
 			}
+				//trace_printk("[DEBUGRZ] dmz_get_high_weight_zone_for_reclaim chunk %u zone %u\n", c->id, zone->id);
 			zrc->kc_throttle.throttle = 100;
+			trace_printk("[SNAP2] dmz_do_zone_reclaim start zone %u c %u\n", zone->id, c->id);
 			ret = dmz_do_zone_reclaim(zrc, zone, c);
+			trace_printk("[SNAP2] dmz_do_zone_reclaim end zone %u \n", zone->id);
 //				if (ret) { break; }
 //			}
 			if (ret && ret != -EINTR) {
@@ -1442,8 +1579,17 @@ static void dmz_reclaim_work(struct work_struct *work)
 			/* time debug */
 			end = ktime_get();
 			actual_time = ktime_to_ns(ktime_sub(end, start));
+			if (ret == 0) {
+//				trace_printk("[TIME] reclaim success time %lld ns\n", (long long)actual_time);
+			}
+			else {
+//				trace_printk("[TIME] reclaim fail %d time %lld ns\n", ret, (long long)actual_time);
+			}
 			/* time debug */
 			return;	
+		}
+		else {
+			trace_printk("[WRITELEN] dmz_get_high_weight_zone_for_reclaim == 0 zone_recl fail\n");
 		}
 	}
 
@@ -1452,6 +1598,26 @@ static void dmz_reclaim_work(struct work_struct *work)
 	p_unmap = dmz_reclaim_percentage(zrc);
 
 	if (!dmz_should_reclaim(zrc, p_unmap)) {
+		/* zone reclaim modi */
+		/*
+		struct dm_zone *zone;
+		struct dm_chunk *c;
+		if (dmz_get_high_weight_zone_for_reclaim(zmd, zrc->dev_idx, dmz_target_idle(zrc), zone, c)) {
+			ret = dmz_do_zone_reclaim(zrc, zone, c);
+			if (ret && ret != -EINTR) {
+				trace_printk("[DEBUGRECL] dmz_do_zone_reclaim error\n");
+				if (!dmz_check_dev(zmd))
+					return;
+			}
+			dmz_schedule_reclaim(zrc);
+			return;
+		}
+		else {
+			mod_delayed_work(zrc->wq, &zrc->work, DMZ_IDLE_PERIOD);
+			return;
+		}
+		*/
+		/* zone reclaim modi */
 
 		zrc->is_zone_reclaim = 0;
 		mod_delayed_work(zrc->wq, &zrc->work, DMZ_IDLE_PERIOD);
@@ -1480,9 +1646,11 @@ static void dmz_reclaim_work(struct work_struct *work)
 
 	if (dmz_target_idle(zrc) || p_unmap < DMZ_RECLAIM_LOW_UNMAP_ZONES / 2) {
 		/* Idle or very low percentage: go fast */
+//		if (!zrc->kc_throttle) { trace_printk("[DEBUG] zrc->kc_throttle == NULL error\n"); }
 		zrc->kc_throttle.throttle = 100;
 	} else {
 		/* Busy but we still have some random zone: throttle */
+//		if (!zrc->kc_throttle) { trace_printk("[DEBUG] zrc->kc_throttle == NULL error\n"); }
 		zrc->kc_throttle.throttle = min(75U, 100U - p_unmap / 2);
 	}
 
@@ -1501,6 +1669,12 @@ static void dmz_reclaim_work(struct work_struct *work)
 	ret = dmz_do_reclaim_chunk(zrc);
 	end = ktime_get();
 	actual_time = ktime_to_ns(ktime_sub(end, start));
+	if (ret == 0) {
+		trace_printk("[TIME] reclaim success time %lld ns\n", (long long)actual_time);
+	}
+	else {
+		trace_printk("[TIME] reclaim fail %d time %lld ns\n", ret, (long long)actual_time);
+	}
 	if (ret && ret != -EINTR) {
 		if (!dmz_check_dev(zmd)) {
 			/* modi */

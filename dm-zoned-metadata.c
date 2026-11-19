@@ -1710,8 +1710,10 @@ static int dmz_handle_seq_write_err(struct dmz_metadata *zmd,
 		     zone->id, zone->wp_block, wp);
 
 	if (zone->wp_block < wp) {
+		trace_printk("[DEBUGINV] dmz_handle_seq_write_err dmz_invalidate_blocks start zone: %u \n", zone->id);
 		dmz_invalidate_blocks(zmd, zone, zone->wp_block,
 				      wp - zone->wp_block);
+		trace_printk("[DEBUGINV] dmz_handle_seq_write_err dmz_invalidate_blocks end\n");
 	}
 
 	return 0;
@@ -1927,6 +1929,14 @@ void dmz_set_chunk_mapping(struct dmz_metadata *zmd, unsigned int chunk,
 static void __dmz_lru_zone(struct dmz_metadata *zmd, struct dm_zone *zone)
 {
 	
+	if (list_empty(&zone->link)) {
+		trace_printk("[DEBUG3] __dmz_lru_zone list_empty error\n");
+	}
+	
+
+	if (zone == NULL) {
+		trace_printk("[DEBUG3] __dmz_lru_zone zone null error\n");
+	}
 	list_del_init(&zone->link);
 	if (dmz_is_seq(zone)) {
 		/* LRU rotate sequential zone */
@@ -1953,6 +1963,7 @@ static void __dmz_lru_zone(struct dmz_metadata *zmd, struct dm_zone *zone)
  */
 static void dmz_lru_zone(struct dmz_metadata *zmd, struct dm_zone *zone/*modi*/, unsigned int chunk_id)
 {
+	if (zone == NULL) { trace_printk("[DEBUG3] dmz_lru_zone zone == NULL error\n"); }
 	__dmz_lru_zone(zmd, zone);
 	if (dmz_is_seq(zone)) {
 		if (zone->bzone) {
@@ -1962,9 +1973,14 @@ static void dmz_lru_zone(struct dmz_metadata *zmd, struct dm_zone *zone/*modi*/,
 	}
 	/*modi*/
 	struct dm_chunk *c = NULL;
+	if (zone == NULL) { trace_printk("[DEBUG3] dmz_lru_zone zone == NULL error\n"); }
+	if (&zone->chunks == NULL) { trace_printk("[DEBUG3] dmz_lru_zone zone->chunks == NULL error\n"); }
+	if (list_empty(&zone->chunks)) { trace_printk("[DEBUG3] dmz_lru_zone list_empty(&zone->chunks) error\n"); }
 	list_for_each_entry(c, &(zone->chunks), link) {
 		if (c->id == chunk_id) { break; }
 	}
+	if (c == NULL) { trace_printk("[DEBUG3] dmz_lru_zone c == NULL error\n"); }
+	if (c->id != chunk_id) { trace_printk("[DEBUG] dmz_lru_zone c->id != chunk_id error\n"); }
 	if (c->szone) {
 		__dmz_lru_zone(zmd, c->szone);
 	}
@@ -2064,6 +2080,7 @@ void dmz_unlock_chunk_for_zone_reclaim(struct dm_chunk *chunk)
 	clear_bit(DMZ_CHUNK_ZONE_RECLAIM, &chunk->flags);
 	smp_mb__after_atomic();
 	wake_up_bit(&chunk->flags, DMZ_CHUNK_ZONE_RECLAIM);
+	trace_printk("[WAIT] chunk %u wait end\n", chunk->id);
 //	wake_up_all(&chunk->io_wait);
 }
 /* chunk IO block modi */
@@ -2119,7 +2136,11 @@ static struct dm_zone *dmz_get_rnd_zone_for_reclaim(struct dmz_metadata *zmd,
 	 * data zone that can be reclaimed.
 	 */
 	/*modi*/
+	if (zone_list == NULL) {
+		trace_printk("\t\t\t[DEBUGRECL] dmz_get_rnd_zone_for_reclaim zone_list == NULL error\n");
+	}
 	if (list_empty(zone_list)) {
+		trace_printk("\t\t\t[DEBUGRECL] dmz_get_rnd_zone_for_reclaim zone_list empty error\n");
 		return NULL;
 	}
 	list_for_each_entry(zone, zone_list, link) {
@@ -2264,27 +2285,53 @@ bool dmz_get_high_weight_zone_for_reclaim(struct dmz_metadata *zmd,
     struct dm_chunk *c, *maxw_c = NULL;
 	struct list_head *zone_list = NULL;
     dmz_lock_map(zmd);
-	list_for_each_entry(c, &zone->chunks, link) {
-    	if (!maxw_c || maxw_c->weight < c->weight) {
-        	maxw_c = c;
-        }
+	/*
+    if (zmd->nr_cache) {
+        zone_list = &zmd->map_cache_list;
+        if (idle && list_empty(zone_list)) {
+            zone_list = &zmd->dev[idx].map_rnd_list;
+		}
     }
-
-
-	if (dmz_lock_chunk_reclaim(maxw_c)) {
-		*ret_c = maxw_c;
-	    dmz_unlock_map(zmd);
-		return true;
+    else {
+        zone_list = &zmd->dev[idx].map_rnd_list;
 	}
-	else {
-		list_for_each_entry(c, &zone->chunks, link) {
-			if (dmz_lock_chunk_reclaim(c)) {
-				*ret_c = c;
-				dmz_unlock_map(zmd);
+
+	if (zone_list == NULL) {
+		trace_printk("[DEBUGRAC] dmz_get_high_weight_zone_for_reclaim list empty\n");
+	}
+	*/
+	/*
+    list_for_each_entry(zone, zone_list, link) {
+        if (zone->weight * 100 / DMZ_BLOCK_PER_ZONE > DMZ_ZONE_RECLAIM_WEIGHT) {
+			if (&zone->chunks == NULL) {
+				trace_printk("[DEBUGRAC] dmz_get_high_weight_zone_for_reclaim chunk list empty\n");
+			}
+			*/
+            list_for_each_entry(c, &zone->chunks, link) {
+               if (!maxw_c || maxw_c->weight < c->weight) {
+                    maxw_c = c;
+                }
+            }
+
+
+			if (dmz_lock_chunk_reclaim(maxw_c)) {
+	            *ret_c = maxw_c;
+//	            *ret_zone = zone;
+	            dmz_unlock_map(zmd);
 				return true;
 			}
-		}
-	}
+			else {
+				list_for_each_entry(c, &zone->chunks, link) {
+					if (dmz_lock_chunk_reclaim(c)) {
+						*ret_c = c;
+//						*ret_zone = zone;
+						dmz_unlock_map(zmd);
+						return true;
+					}
+				}
+			}
+//        }
+//    }
     dmz_unlock_map(zmd);
     return false;
 }
@@ -2297,12 +2344,16 @@ struct dm_chunk* dmz_get_chunk_snapshot(struct dmz_metadata *zmd, struct dm_chun
 
 	spin_lock(&c->snap_lock);
 
+	trace_printk("[WC] dmz_get_chunk_snapshot start\n");
 	while (i < DMZ_BLOCK_PER_ZONE) {
 		if (c->write_check[i] == c->id) {
+			trace_printk("[WC] c %u i %d c->offsets[i] %d\n", c->id, i, c->offsets[i]);
 			snap->offsets[i] = c->offsets[i];
 			snap->write_check[i] = 1;
 			c->offsets[i] = -1;
 			c->write_check[i] = -1;
+			trace_printk("[WC] c %u i %d, c->offsets[i] %d set\n", c->id, i, c->offsets[i]);
+//			trace_printk("[WC] c %u i %d, snap->offsets[i] %d\n", c->id, i, snap->offsets[i]);
 			snap->weight++;
 		}
 		else {
@@ -2314,9 +2365,23 @@ struct dm_chunk* dmz_get_chunk_snapshot(struct dmz_metadata *zmd, struct dm_chun
 	spin_unlock(&c->snap_lock);
 	c->weight -= snap->weight;
 	snap->szone = c->szone;
+//	snap->rz_weight = c->rz_weight;
+	
+/*	
+	if (c->weight > zmd->zone_nr_blocks / 2) {
+        c->rz_weight = 4;
+    }
+    else if (c->weight > zmd->zone_nr_blocks / 4) {
+        c->rz_weight = 2;
+    }
+	else {
+		c->rz_weight = 1;
+	}
+*/	
 
 	snap->id = c->id;
 
+	trace_printk("[WC] dmz_get_chunk_snapshot end\n");
 	return snap;
 }
 
@@ -2408,6 +2473,7 @@ again:
 		/* Allocate a random zone */
 		dzone = dmz_alloc_zone(zmd, 0, alloc_flags/*, nr_blocks*/);
 		if (!dzone) {
+			trace_printk("[DEBUG] dmz_get_chunk_mapping dmz_alloc_zone !dzone error\n");
 			if (dmz_dev_is_dying(zmd)) {
 				dzone = ERR_PTR(-EIO);
 				goto out;
@@ -2420,6 +2486,7 @@ again:
 		if (l_e) {
 			end1 = ktime_get();
 			actual_time = ktime_to_ns(ktime_sub(end1, start1));
+			trace_printk("[LISTEMPTY] time %lld \n", (long long)actual_time);
 		}
 		
 		dmz_map_zone(zmd, dzone, chunk, 1);
@@ -2437,7 +2504,9 @@ again:
 			list_for_each_entry(c, &(dzone->chunks), link) {
 				if (c->id == chunk) { break; }
 			}
+			if (c == NULL) { trace_printk("[DEBUG] dmz_get_chunk_mapping c == NULL error \n"); }
 			if (c->id != chunk) {
+				trace_printk("[DEBUG] dmz_get_chunk_mapping c->id != chunk error \n");
 				dzone = ERR_PTR(-EIO);
 				goto out;
 			}
@@ -2445,6 +2514,7 @@ again:
 		else {
 			if (dzone->bzone == NULL) {
 				struct dm_chunk *c;
+				trace_printk("[TEST] chunk erase start\n");
 				list_for_each_entry(c, &(zmd->mapped_chunk_list), map_link) {
 					if (c->id == chunk) { 
 						list_del(&c->link);
@@ -2453,6 +2523,7 @@ again:
 						break; 
 					}
 				}
+				trace_printk("[TEST] chunk erase end\n");
 			}
 		}
 
@@ -2484,15 +2555,24 @@ again:
 			if (c->id == chunk) { break; }
 		}
 	}
+//	if (dmz_in_reclaim(zone)) {
+	/* chunk IO block modi */
+//	trace_printk("[TEST] chunk_in_recl_test\n");
+
+	trace_printk("[SNAP2] dzone(%u)->weight %u dmz_chunk_in_zone_reclaim(c) %d\n", 
+					dzone->id, dzone->weight, dmz_chunk_in_zone_reclaim(c));
 	while (c->id == chunk && dzone->weight == DMZ_BLOCK_PER_ZONE - 1 && dmz_chunk_in_zone_reclaim(c)) {
 		dmz_unlock_map(zmd);
 		dmz_unlock_metadata(zmd);
+		trace_printk("[WAIT] wait c %u\n", c->id);
 		wait_on_bit(&c->flags, DMZ_CHUNK_ZONE_RECLAIM, TASK_UNINTERRUPTIBLE);
 		dmz_lock_metadata(zmd);
 		dmz_lock_map(zmd);
 		goto again;
 	}
+	trace_printk("[WAIT] no wait c %u\n", c->id);
 	
+//	trace_printk("[TEST] no wait_chunk start\n");
 	/* chunk IO block modi */
 
 chunk_again:
@@ -2507,6 +2587,7 @@ chunk_again:
 	if (in_recl) {
 		end2 = ktime_get();
 		actual_time = ktime_to_ns(ktime_sub(end2, start2));
+		trace_printk("[INRECL] time %lld \n", (long long)actual_time);
 	}
 	/* chunk list modi */
 	dmz_activate_zone(dzone);
@@ -2526,6 +2607,7 @@ chunk_again:
 	*/
 	
 	/* chunk list modi */
+	if (dzone == NULL) { trace_printk("[DEBUG3] dmz_get_chunk_mapping dzone == NULL\n"); }
 	dmz_lru_zone(zmd, dzone, chunk);
 	/* chunk list modi */
 	if (c->id == chunk) {
@@ -2566,6 +2648,10 @@ void dmz_put_chunk_mapping(struct dmz_metadata *zmd, struct dm_zone *dzone, /*mo
 				if (cc->id == chunk_id) {
 					dmz_lru_chunk(zmd, cc);
 				}
+				else {
+					trace_printk("[DEBUGNEWR] dmz_put_chunk_mapping cc->id %u != chunk_id %u dzone %u bzone %u\n",
+									cc->id, chunk_id, dzone->id, bzone->id);
+				}
 				/* chunk list modi */
 			}
 			else {
@@ -2578,12 +2664,17 @@ void dmz_put_chunk_mapping(struct dmz_metadata *zmd, struct dm_zone *dzone, /*mo
 	}
 
 	/* Deactivate the data zone */
+	if (dzone == NULL) {
+		trace_printk("[DEBUG] dmz_put_chunk_mapping dzone == NULL error\n");
+	}
 	dmz_deactivate_zone(dzone);
 	/* chunk list modi */
 	
     struct dm_chunk *c;
     list_for_each_entry(c, &zmd->mapped_chunk_list, map_link) {
         if (c->id == chunk_id) { 
+			//dmz_deactivate_chunk(c);
+			//trace_printk("[DEBUGCREF] dmz_deactivate_chunk1 c %u refcount %u\n", c->id, atomic_read(&c->refcount));
 			break; 
 		}
     }
@@ -2625,6 +2716,31 @@ struct dm_zone *dmz_get_chunk_buffer(struct dmz_metadata *zmd,
 again:
 	bzone = dzone->bzone;
 	if (bzone) {
+			/*
+		struct dm_chunk *c = NULL;
+		if (!list_empty(&bzone->chunks)) {
+			list_for_each_entry(c, &(bzone->chunks), link) {
+				if (c->id == chunk_id) { break; }
+			}
+		}
+		else {
+			list_for_each_entry(c, &(zmd->mapped_chunk_list), map_link) {
+				if (c->id == chunk_id) { break; }
+			}
+		}
+		if (c == NULL) {
+			trace_printk("[TEST] dmz_get_chunk_buffer c == NULL error\n");
+		}
+
+		while (c->id == chunk_id && dmz_chunk_in_zone_reclaim(c)) {
+			dmz_unlock_map(zmd);
+			dmz_unlock_metadata(zmd);
+			wait_on_bit(&c->flags, DMZ_CHUNK_ZONE_RECLAIM, TASK_UNINTERRUPTIBLE);
+			dmz_lock_metadata(zmd);
+			dmz_lock_map(zmd);
+			goto again;
+		}
+		*/
 		goto out;
 	}
 
@@ -2672,6 +2788,7 @@ again:
 	while (i < DMZ_BLOCK_PER_ZONE) {
 		cc->write_check[i] = -1;
 		cc->offsets[i] = -1;
+		//trace_printk("[WC] c %u offsets[i] %d set\n", cc->id, cc->offsets[i]);
 		i++;
 	}
 	list_add_tail(&cc->link, &bzone->chunks);
@@ -2682,6 +2799,7 @@ again:
 	atomic_set(&cc->zone_recl, 0);
 	//dmz_activate_chunk(cc);
 	dmz_activate_chunk(cc);
+	trace_printk("[CHUNKREF] dmz_get_chunk_buffer dmz_activate_chunk chunk %u refcount %u\n", cc->id, atomic_read(&cc->refcount));
 	/* chunk list modi */
 //	bzone->nr_mapped_chunk++;
 //	bzone->chunk = dzone->chunk;
@@ -2872,6 +2990,7 @@ void dmz_map_zone(struct dmz_metadata *zmd, struct dm_zone *dzone,
 		int i = 0, j = 0;
 		while (i < DMZ_BLOCK_PER_ZONE) {
 			cc->offsets[i] = -1;
+			//trace_printk("[WC] c %u offsets[i] %d set\n", cc->id, cc->offsets[i]);
 			cc->write_check[i] = -1;
 			i++;
 		}
@@ -2966,6 +3085,7 @@ void dmz_unmap_zone(struct dmz_metadata *zmd, struct dm_zone *zone /*modi*/, uns
 
 	if (chunk_id == DMZ_MAP_UNMAPPED) {
 		/* Already unmapped */
+		trace_printk("[DEBUG] dmz_unmap_zone chunk_id == DMZ_MAP_UNMAPPED return\n");
 		return;
 	}
 
@@ -2979,6 +3099,7 @@ void dmz_unmap_zone(struct dmz_metadata *zmd, struct dm_zone *zone /*modi*/, uns
 			if (c->id == chunk_id) { break; }
 		}
 		if (c->id != chunk_id) { 
+			trace_printk("[DEBUG] dmz_unmap_zone list_for_each_entry end c->id != chunk_id error\n");
 		}
 
 		if (c->szone == NULL) {
@@ -3097,6 +3218,9 @@ int dmz_copy_valid_blocks(struct dmz_metadata *zmd, struct dm_zone *from_zone,
 //	sector_t chunk_block = 0;
 	int count = 0;
 
+	if (c == NULL) {
+		trace_printk("[DEBUGRECL] dmz_copy_valid_blocks c == NULL error\n");
+	}
 	/* Get the zones bitmap blocks */
 	int i = 0;
 	while (i < DMZ_BLOCK_PER_ZONE) {
@@ -3107,11 +3231,13 @@ int dmz_copy_valid_blocks(struct dmz_metadata *zmd, struct dm_zone *from_zone,
 
 		from_mblk = dmz_get_bitmap(zmd, from_zone, rz_offset);
 		if (IS_ERR(from_mblk)) {
+			trace_printk("[DEBUGRECL] dmz_copy_valid_blocks IS_ERR(from_mblk) error\n");
 			return PTR_ERR(from_mblk);
 		}
 		to_mblk = dmz_get_bitmap(zmd, to_zone, i);
 		if (IS_ERR(to_mblk)) {
 			dmz_release_mblock(zmd, from_mblk);
+			trace_printk("[DEBUGRECL] dmz_copy_valid_blocks IS_ERR(to_mblk) error\n");
 			return PTR_ERR(to_mblk);
 		}
 
@@ -3172,6 +3298,14 @@ int dmz_copy_valid_blocks_for_zone_reclaim(struct dmz_metadata *zmd, struct dm_z
 //	sector_t chunk_block = 0;
 	int count = 0;
 
+	/*
+	list_for_each_entry(c, &from_zone->chunks, link) {
+		if (c->id == snapshot->id) { break; }
+	}
+	if (c == NULL || c->id != snapshot->id) {
+		trace_printk("[DEBUGRECL] dmz_copy_valid_blocks c == NULL error\n");
+	}
+	*/
 	/* Get the zones bitmap blocks */
 	int i = 0;
 	while (i < DMZ_BLOCK_PER_ZONE) {
@@ -3181,6 +3315,7 @@ int dmz_copy_valid_blocks_for_zone_reclaim(struct dmz_metadata *zmd, struct dm_z
 		int rz_offset = snapshot->offsets[i];
 		/* small chunk modi */
 		if (rz_offset == -1) { 									// err
+			trace_printk("[WC] c %u snap %u i %d rz_offset == -1 error\n", c->id, snapshot->id, i);
 			i++; 
 			continue; 
 		}
@@ -3205,11 +3340,13 @@ int dmz_copy_valid_blocks_for_zone_reclaim(struct dmz_metadata *zmd, struct dm_z
 
 		from_mblk = dmz_get_bitmap(zmd, from_zone, rz_offset);
 		if (IS_ERR(from_mblk)) {
+			trace_printk("[DEBUGRECL] dmz_copy_valid_blocks IS_ERR(from_mblk) error\n");
 			return PTR_ERR(from_mblk);
 		}
 		to_mblk = dmz_get_bitmap(zmd, to_zone, i);
 		if (IS_ERR(to_mblk)) {
 			dmz_release_mblock(zmd, from_mblk);
+			trace_printk("[DEBUGRECL] dmz_copy_valid_blocks IS_ERR(to_mblk) error\n");
 			return PTR_ERR(to_mblk);
 		}
 
@@ -3273,6 +3410,7 @@ int dmz_merge_valid_blocks(struct dmz_metadata *zmd, struct dm_zone *from_zone,
 	int ret;
 
 	if (c == NULL) {
+		trace_printk("[DEBUG] dmz_merge_valid_blocks c == NULL error\n");
 	}
 	/* Get the zones bitmap blocks */
 	while (chunk_block < zmd->zone_nr_blocks) {
@@ -3301,7 +3439,9 @@ int dmz_merge_valid_blocks(struct dmz_metadata *zmd, struct dm_zone *from_zone,
 //			return ret;
 
 		nr_blocks = ret;
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks dmz_validate_blocks start chunk_id: %u, zone_id: %u\n", c->id, to_zone);
 		ret = dmz_validate_blocks(zmd, to_zone, chunk_block, nr_blocks, c->id, 0);
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks dmz_validate_blocks start chunk_id: %u, zone_id: %u\n", c->id, to_zone);
 		if (ret)
 			return ret;
 
@@ -3321,6 +3461,17 @@ int dmz_merge_valid_blocks_for_zone_reclaim(struct dmz_metadata *zmd, struct dm_
 {
 	unsigned int nr_blocks;
 	int ret;
+//	struct dm_chunk *c = NULL;
+
+	/*
+	list_for_each_entry(c, &from_zone->chunks, link) {
+		if (c->id == snapshot->id) { break; }
+	}
+
+	if (c == NULL || c->id != snapshot->id) {
+		trace_printk("[DEBUG] dmz_merge_valid_blocks c == NULL error\n");
+	}
+	*/
 	/* Get the zones bitmap blocks */
 	while (chunk_block < zmd->zone_nr_blocks) {
 		/* Get a valid region from the source zone */
@@ -3350,7 +3501,9 @@ int dmz_merge_valid_blocks_for_zone_reclaim(struct dmz_metadata *zmd, struct dm_
 //			return ret;
 
 		nr_blocks = ret;
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks dmz_validate_blocks start chunk_id: %u, zone_id: %u\n", snapshot->id, to_zone);
 		ret = dmz_validate_blocks(zmd, to_zone, chunk_block, nr_blocks, snapshot->id, 0);
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks dmz_validate_blocks start chunk_id: %u, zone_id: %u\n", snapshot->id, to_zone);
 		if (ret)
 			return ret;
 
@@ -3372,6 +3525,7 @@ int dmz_merge_valid_blocks_seq(struct dmz_metadata *zmd, struct dm_zone *from_zo
 	int ret;
 
 	if (c == NULL) {
+		trace_printk("[DEBUG] dmz_merge_valid_blocks_seq c == NULL error\n");
 	}
 	/* Get the zones bitmap blocks */
 	while (chunk_block < zmd->zone_nr_blocks) {
@@ -3415,7 +3569,9 @@ int dmz_merge_valid_blocks_seq(struct dmz_metadata *zmd, struct dm_zone *from_zo
 
 		nr_blocks = ret;
 		start_block = chunk_block;
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks_seq dmz_validate_blocks start chunk_id: %u, zone_id: %u\n", c->id, to_zone->id);
 		ret = dmz_validate_blocks(zmd, to_zone, start_block, nr_blocks, c->id, to_zone->wp_block);
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks_seq dmz_validate_blocks end\n");
 		//to_zone->wp_block += nr_blocks;
 		if (ret)
 			return ret;
@@ -3441,6 +3597,7 @@ int dmz_merge_valid_blocks_seq_for_zone_reclaim(struct dmz_metadata *zmd, struct
 	}
 
 	if (c == NULL || c->id != snapshot->id) {
+		trace_printk("[DEBUG] dmz_merge_valid_blocks_seq c == NULL error\n");
 	}
 	*/
 	/* Get the zones bitmap blocks */
@@ -3487,7 +3644,9 @@ int dmz_merge_valid_blocks_seq_for_zone_reclaim(struct dmz_metadata *zmd, struct
 
 		nr_blocks = ret;
 		start_block = chunk_block;
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks_seq dmz_validate_blocks start chunk_id: %u, zone_id: %u\n", snapshot->id, to_zone->id);
 		ret = dmz_validate_blocks(zmd, to_zone, start_block, nr_blocks, snapshot->id, to_zone->wp_block);
+		trace_printk("[DEBUGINV] dmz_merge_valid_blocks_seq dmz_validate_blocks end\n");
 		//to_zone->wp_block += nr_blocks;
 		if (ret)
 			return ret;
@@ -3515,6 +3674,7 @@ static int dmz_to_next_set_block(struct dmz_metadata *zmd, struct dm_zone *zone,
 	int n = 0;
 
 	if (chunk_block + nr_blocks > zmd->zone_nr_blocks) {
+		trace_printk("[DEBUGERR] dmz_to_next_set_block warn_on\n");
 	}
 	WARN_ON(chunk_block + nr_blocks > zmd->zone_nr_blocks);
 
@@ -3522,6 +3682,7 @@ static int dmz_to_next_set_block(struct dmz_metadata *zmd, struct dm_zone *zone,
 		/* Get bitmap block */
 		mblk = dmz_get_bitmap(zmd, zone, chunk_block);
 		if (IS_ERR(mblk)) {
+			trace_printk("[DEBUGERR] dmz_to_next_set_block is_err\n");
 			return PTR_ERR(mblk);
 		}
 
@@ -3593,13 +3754,16 @@ again:
 	}
 	else {
 		list = &zmd->dev[dev_idx].unmap_seq_list;
+		trace_printk("[DEBUG] dmz_alloc_zone list == seq\n");
 	}
 
 	if (list_empty(list)) {
+		trace_printk("[DEBUG] dmz_alloc_zone list_empty error1\n");
 		/*
 		 * No free zone: return NULL if this is for not reclaim.
 		 */
 		if (!(flags & DMZ_ALLOC_RECLAIM)) {
+			trace_printk("[DEBUG] dmz_alloc_zone list_empty error2\n");
 			return NULL;
 		}
 		/*
@@ -3636,6 +3800,7 @@ again:
 		}
 	}
 	if (!zone) {
+		trace_printk("[WRITELEN] zone alloc fail error\n");
 		return NULL;
 	}
 	/*
@@ -3672,8 +3837,11 @@ void dmz_set_cache_wp(struct dmz_metadata *zmd, struct dm_zone *rzone, unsigned 
 	ret = dmz_to_next_set_block(zmd, rzone, start_block, zmd->zone_nr_blocks - rzone->wp_block, 0);
 
 	if (ret == zmd->zone_nr_blocks) {
+		trace_printk("[ZONEWP] zone %u full\n", rzone->id);
+		trace_printk("[SNAP2] zone %u full\n", rzone->id);
 		struct dm_chunk *c;
 		list_for_each_entry(c, &rzone->chunks, link) {
+			trace_printk("[ZONEWP] chunk %u weight %u\n", c->id, c->weight);
 		}
 	}
 
@@ -3694,12 +3862,14 @@ void dmz_set_cache_wp_modi(struct dmz_metadata *zmd, struct dm_zone *rzone, unsi
 		ret = dmz_to_next_set_block(zmd, rzone, start_block, zmd->zone_nr_blocks - rzone->wp_block, 0);
 
 		if (ret < 0) {
+			trace_printk("[WRITELEN] set_cache_wp fail ERR\n");
 			return;
 		}
 
 		start_block += ret;
 
 		len = dmz_to_next_set_block(zmd, rzone, start_block, zmd->zone_nr_blocks - rzone->wp_block, 1);
+		trace_printk("[WRITELEN] first zone %u start %llu len %llu nr_blocks %u\n", rzone->id, start_block, len, nr_blocks);
 
 		if (nr_blocks <= len) {
 			rzone->wp_block = start_block;
@@ -3714,12 +3884,14 @@ void dmz_set_cache_wp_modi(struct dmz_metadata *zmd, struct dm_zone *rzone, unsi
 		ret = dmz_to_next_set_block(zmd, rzone, start_block, zmd->zone_nr_blocks, 0);
 
 		if (ret < 0) {
+			trace_printk("[WRITELEN] set_cache_wp fail ERR\n");
 			return;
 		}
 
 		start_block += ret;
 
 		len = dmz_to_next_set_block(zmd, rzone, start_block, zmd->zone_nr_blocks, 1);
+		trace_printk("[WRITELEN] second zone %u start %llu len %llu nr_blocks %u\n", rzone->id, start_block, len, nr_blocks);
 
 		if (nr_blocks <= len) {
 			rzone->wp_block = start_block;
@@ -3729,6 +3901,7 @@ void dmz_set_cache_wp_modi(struct dmz_metadata *zmd, struct dm_zone *rzone, unsi
 		start_block += len;
 	}
 
+	trace_printk("[WRITELEN] set_cache_wp fail ERR2 zone %u weight %u nr_blocks %u\n", rzone->id, rzone->weight, nr_blocks);
 }
 /*
  * Validate all the blocks in the range [block..block+nr_blocks-1].
@@ -3741,6 +3914,7 @@ int dmz_validate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
 	struct dmz_mblock *mblk;
 	unsigned int n = 0;
 
+	trace_printk("[DEBUGINVV] dmz_validate_blocks zone %u nr_blocks %u\n", zone->id, nr_blocks);
 	dmz_zmd_debug(zmd, "=> VALIDATE zone %u, block %llu, %u blocks",
 		      zone->id, (unsigned long long)chunk_block,
 		      nr_blocks);
@@ -3753,6 +3927,7 @@ int dmz_validate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
 			if (c->id == chunk) { break; }
 		}
 		if (c->id != chunk) {
+			trace_printk("[DEBUG7] dmz_validate_blocks zone %u c->id %u != chunk %u error\n", zone->id, c->id, chunk);
 		}
 
 		while (nr_blocks) {
@@ -3766,7 +3941,16 @@ int dmz_validate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
 			bit = wp & DMZ_BLOCK_MASK_BITS;
 			nr_bits = 1;
 
+			/* chunk snapshot modi */
+//			spin_lock(&c->snap_lock);
+			/* chunk snapshot modi */
+			/* small chunk modi */
 			c->offsets[chunk_block] = wp;
+			trace_printk("[WC] c %u chunk_block %u wp %u set\n", c->id, chunk_block, wp);
+			/* small chunk modi */
+			/* chunk snapshot modi */
+//			spin_unlock(&c->snap_lock);
+			/* chunk snapshot modi */
 
 			count = dmz_set_bits((unsigned long *)mblk->data, bit, nr_bits);
 			if (count) {
@@ -3781,6 +3965,31 @@ int dmz_validate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
 //			zone->wp_block++;
 			wp++;
 		}
+		/* rz chunk weight modi */
+		//dmz_set_rz_chunk_weight(c);
+		/* chunk snapshot modi */
+//		spin_lock(&c->snap_lock);
+		/* chunk snapshot modi */
+	/*	
+		if (c->weight > zmd->zone_nr_blocks / 2) {
+			zone->nr_mapped_chunk -= c->rz_weight;
+			c->rz_weight = 4;
+			zone->nr_mapped_chunk += c->rz_weight;
+			trace_printk("[RZW] chunk %u weight %u rz_weight %u zone %u nr_mapped_chunk %u\n", 
+							c->id, c->weight, c->rz_weight, zone->id, zone->nr_mapped_chunk);
+		}
+		else if (c->weight > zmd->zone_nr_blocks / 4) {
+			zone->nr_mapped_chunk -= c->rz_weight;
+			c->rz_weight = 2;
+			zone->nr_mapped_chunk += c->rz_weight;
+			trace_printk("[RZW] chunk %u weight %u rz_weight %u zone %u nr_mapped_chunk %u\n", 
+							c->id, c->weight, c->rz_weight, zone->id, zone->nr_mapped_chunk);
+		}
+	*/	
+		/* chunk snapshot modi */
+//		spin_unlock(&c->snap_lock);
+		/* chunk snapshot modi */
+		/* rz chunk weight modi */
 	}
 	else {
 		while (nr_blocks) {
@@ -3806,10 +4015,13 @@ int dmz_validate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
 	}
 
 	if (likely(zone->weight + n <= zone_nr_blocks)) {
+		trace_printk("[DEBUGINVV] dmz_validate_blocks zone %u weight(%u) + n(%u)\n", zone->id, zone->weight, n);
 		zone->weight += n;
 		zone->free_block -= n;
 	}
 	else {
+		trace_printk("[DEBUGINVV] dmz_validate_blocks zone %u weight %u error n %u\n", zone->id, zone->weight, n);
+		trace_printk("[DEBUGINV] dmz_validate_blocks weight error zone %u\n", zone->id);
 		dmz_zmd_warn(zmd, "Zone %u: weight %u should be <= %u",
 			     zone->id, zone->weight,
 			     zone_nr_blocks - n);
@@ -3830,6 +4042,7 @@ int dmz_invalidate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
     struct dmz_mblock *mblk;
     unsigned int n = 0;
 
+	trace_printk("[DEBUGINVV] dmz_invalidate_blocks zone %u nr_blocks %u\n", zone->id, nr_blocks);
     dmz_zmd_debug(zmd, "=> INVALIDATE zone %u, block %llu, %u blocks",
               zone->id, (u64)chunk_block, nr_blocks);
 
@@ -3858,10 +4071,13 @@ int dmz_invalidate_blocks(struct dmz_metadata *zmd, struct dm_zone *zone,
     }
 
     if (zone->weight >= n) {
+		trace_printk("[DEBUGINVV] dmz_invalidate_blocks zone %u weight(%u) - n(%u)\n", zone->id, zone->weight, n);
         zone->weight -= n;
 		zone->free_block += n;
 	}
     else {
+		trace_printk("[DEBUGINVV] dmz_invalidate_blocks zone %u weight %u error n %u\n", zone->id, zone->weight, n);
+		trace_printk("[DEBUGINV] dmz_invalidate_blocks weight error zone %u\n", zone->id);
         dmz_zmd_warn(zmd, "Zone %u: weight %u should be >= %u",
                  zone->id, zone->weight, n);
         zone->weight = 0;
@@ -3878,6 +4094,7 @@ int dmz_invalidate_blocks_modi(struct dmz_metadata *zmd, struct dm_zone *zone,
 	struct dmz_mblock *mblk;
 	unsigned int n = 0;
 
+	trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi zone %u nr_blocks %u\n", zone->id, nr_blocks);
 	dmz_zmd_debug(zmd, "=> INVALIDATE zone %u, block %llu, %u blocks",
 		      zone->id, (u64)chunk_block, nr_blocks);
 
@@ -3910,6 +4127,9 @@ int dmz_invalidate_blocks_modi(struct dmz_metadata *zmd, struct dm_zone *zone,
 		list_for_each_entry(c, &(zone->chunks), link) {
 			if (c->id == chunk_id) { break; }
 		}
+		if (c->id != chunk_id) {
+			trace_printk("[DEBUG] dmz_invalidate_blocks_modi c->id != chunk_id error\n");
+		}
 
 		//int i = chunk_block;
 		while (nr_blocks) {
@@ -3926,10 +4146,12 @@ int dmz_invalidate_blocks_modi(struct dmz_metadata *zmd, struct dm_zone *zone,
 			count = dmz_clear_bits((unsigned long *)mblk->data,
 							bit, nr_bits);
 			if (count) {
+				trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi count %u\n", count);
 				dmz_dirty_mblock(zmd, mblk);
 				n += count;
 			}
 			else {
+				trace_printk("[DEBUGINVV] already clear\n");
 			}
 			dmz_release_mblock(zmd, mblk);
 
@@ -3939,10 +4161,13 @@ int dmz_invalidate_blocks_modi(struct dmz_metadata *zmd, struct dm_zone *zone,
 	}
 
 	if (zone->weight >= n) {
+		trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi zone %u weight(%u) - n(%u)\n", zone->id, zone->weight, n);
 		zone->weight -= n;
 		zone->free_block += n;
 	}
 	else {
+		trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi zone %u wegith %u error n %u\n", zone->id, zone->weight, n);
+		trace_printk("[DEBUGINV] dmz_invalidate_blocks_modi weight error zone %u\n", zone->id);
 		dmz_zmd_warn(zmd, "Zone %u: weight %u should be >= %u",
 			     zone->id, zone->weight, n);
 		zone->weight = 0;
@@ -3959,10 +4184,21 @@ int dmz_invalidate_blocks_modi_for_zone_reclaim(struct dmz_metadata *zmd, struct
 	struct dmz_mblock *mblk;
 	unsigned int n = 0;
 
+	trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi zone %u nr_blocks %u\n", zone->id, nr_blocks);
 	dmz_zmd_debug(zmd, "=> INVALIDATE zone %u, block %llu, %u blocks",
 		      zone->id, (u64)chunk_block, nr_blocks);
 
 	WARN_ON(chunk_block + nr_blocks > zmd->zone_nr_blocks);
+	/*
+	struct dm_chunk *c;
+	list_for_each_entry(c, &(zone->chunks), link) {
+		if (c->id == chunk_id) { break; }
+	}
+	if (c->id != chunk_id) {
+		trace_printk("[DEBUG] dmz_invalidate_blocks_modi c->id != chunk_id error\n");
+	}
+	*/
+	//int i = chunk_block;
 	while (nr_blocks) {
 		if (snapshot->write_check[chunk_block] == -1) { nr_blocks--; chunk_block++; continue; } // no recl
 		if (c->write_check[chunk_block] == c->id)	  { nr_blocks--; chunk_block++; continue; } // overwrite
@@ -3977,8 +4213,12 @@ int dmz_invalidate_blocks_modi_for_zone_reclaim(struct dmz_metadata *zmd, struct
 		count = dmz_clear_bits((unsigned long *)mblk->data,
 						bit, nr_bits);
 		if (count) {
+			trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi count %u\n", count);
 			dmz_dirty_mblock(zmd, mblk);
 			n += count;
+		}
+		else {
+			trace_printk("[DEBUGINVV] already clear\n");
 		}
 		dmz_release_mblock(zmd, mblk);
 		nr_blocks -= nr_bits;
@@ -3986,10 +4226,13 @@ int dmz_invalidate_blocks_modi_for_zone_reclaim(struct dmz_metadata *zmd, struct
 	}
 
 	if (zone->weight >= n) {
+		trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi zone %u weight(%u) - n(%u)\n", zone->id, zone->weight, n);
 		zone->weight -= n;
 		zone->free_block += n;
 	}
 	else {
+		trace_printk("[DEBUGINVV] dmz_invalidate_blocks_modi zone %u wegith %u error n %u\n", zone->id, zone->weight, n);
+		trace_printk("[DEBUGINV] dmz_invalidate_blocks_modi weight error zone %u\n", zone->id);
 		dmz_zmd_warn(zmd, "Zone %u: weight %u should be >= %u",
 			     zone->id, zone->weight, n);
 		zone->weight = 0;
@@ -4395,8 +4638,10 @@ int dmz_resume_metadata(struct dmz_metadata *zmd)
 			dmz_zmd_err(zmd, "Zone %u: Invalid wp (%llu / %llu)",
 				    i, (u64)zone->wp_block, (u64)wp_block);
 			zone->wp_block = wp_block;
+			trace_printk("[DEBUGINV] dmz_resume_metadata dmz_invalidate_blocks start zone: %u\n", zone->id);
 			dmz_invalidate_blocks(zmd, zone, zone->wp_block,
 					      zmd->zone_nr_blocks - zone->wp_block);
+			trace_printk("[DEBUGINV] dmz_resume_metadata dmz_invalidate_blocks end\n");
 		}
 	}
 
